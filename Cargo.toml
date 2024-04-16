@@ -2,7 +2,7 @@
 name = "rollout"
 description = "A rolling logfile appender that takes data from stdin"
 authors = [ "Richard Matheson" ]
-license = [ "MIT" ]
+license = "MIT"
 keywords = [ "logging", "appender", "rolling" ]
 version = "1.0.0"
 edition = "2021"
