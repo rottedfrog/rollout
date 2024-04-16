@@ -21,13 +21,13 @@ Any irrecoverable errors cause rollout to exit with a non-zero return code. Exam
 
 ## Command Line Options
 
-| Option                  | Description                             |
-|-------------------------|-----------------------------------------|
-| `-h, --help`            | Prints help information                 |
-| `-s, --size`            | Max log size in KB (default 10240)      |
-| `-k, --keep`            | Max number to keep (default 5, max 999) |
-| `-r, --rotate-on-start` | Rotate to a new log file on startup     |
-| `-p, --prefix`          | Log file prefix (required)              |
+| Option                  | Description                                   |
+|-------------------------|-----------------------------------------------|
+| `-h, --help`            | Prints help information                       |
+| `-s, --size`            | Max log size in KB (default 10240)            |
+| `-k, --keep`            | Max number to keep (default 0 (all), max 999) |
+| `-r, --rotate-on-start` | Rotate to a new log file on startup           |
+| `-p, --prefix`          | Log file prefix (required)                    |
 
 ## Examples
 

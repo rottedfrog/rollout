@@ -25,7 +25,7 @@ FLAGS:
 
 OPTIONS:
   -s, --size                Max log size in KB (default: 10240)
-  -k, --keep                Max number to keep (default: 5, max: 999)
+  -k, --keep                Max number to keep (default: 0 (all), max: 999)
   -r, --rotate-on-start     Rotate to a new log file on startup
   -p, --prefix              Log file prefix (required)
 ARGS:
@@ -65,7 +65,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Args, ArgError> {
     let mut dir = None;
     let mut state = ArgState::None;
     let mut size_bytes = 10 * 1024 * 1024;
-    let mut to_keep = 5;
+    let mut to_keep = 0;
     let mut rotate = false;
     let mut prefix = None;
 
@@ -290,6 +290,9 @@ impl LogManager {
     }
 
     fn cleanup_old(&mut self, to_keep: usize, remover: impl Fn(String) -> io::Result<()>) {
+        if to_keep == 0 {
+            return;
+        }
         while self.log_indices.len() > to_keep {
             let index = self.log_indices.pop_front().unwrap();
             // If cleanup fails, this is not a fatal error, just carry on.
