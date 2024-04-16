@@ -23,14 +23,15 @@ FLAGS:
   -h, --help            Prints help information
 
 OPTIONS:
-  -s, --size                Max log size in KB (default 10240)
-  -k, --keep                Max number to keep (default 5, max 999)
+  -s, --size                Max log size in KB (default: 10240)
+  -k, --keep                Max number to keep (default: 5, max: 999)
   -r, --rotate-on-start     Rotate to a new log file on startup
-  -p, --prefix              Log file prefix
+  -p, --prefix              Log file prefix (required)
 ARGS:
-  <INPUT>
+  <dir>                     The directory in which to place the logfiles
 ";
 
+#[derive(PartialEq, Eq, Debug)]
 struct Args {
     dir: String,
     size_bytes: u64,
@@ -39,17 +40,20 @@ struct Args {
     prefix: String,
 }
 
+#[derive(PartialEq, Eq, Debug)]
 enum ArgError {
     ExpectedNumber(String),
     UnknownArgument(String),
     UnableToFindOrCreateDir(String),
     UnexpectedPositionalArg(String),
+    ExpectedArgumentFoundFlag { flag: &'static str, found: String },
     MissingDir,
     MissingNumber,
     MissingPrefix,
+    MissingArgument,
 }
 
-fn parse_args() -> Result<Args, ArgError> {
+fn parse_args(args: impl Iterator<Item = String>) -> Result<Args, ArgError> {
     enum ArgState {
         None,
         Size,
@@ -64,7 +68,7 @@ fn parse_args() -> Result<Args, ArgError> {
     let mut rotate = false;
     let mut prefix = None;
 
-    for arg in std::env::args().skip(1) {
+    for arg in args.skip(1) {
         match state {
             ArgState::Size => {
                 if let Ok(size) = arg.parse::<u64>() {
@@ -85,6 +89,12 @@ fn parse_args() -> Result<Args, ArgError> {
                 }
             }
             ArgState::Prefix => {
+                if arg.starts_with('-') {
+                    return Err(ArgError::ExpectedArgumentFoundFlag {
+                        flag: "--prefix",
+                        found: arg,
+                    });
+                }
                 prefix = Some(arg);
                 state = ArgState::None;
                 continue;
@@ -108,9 +118,12 @@ fn parse_args() -> Result<Args, ArgError> {
             }
         }
     }
-    let ArgState::None = state else {
-        return Err(ArgError::MissingNumber);
-    };
+
+    match state {
+        ArgState::None => {}
+        ArgState::Size | ArgState::Keep => return Err(ArgError::MissingNumber),
+        ArgState::Prefix => return Err(ArgError::MissingArgument),
+    }
 
     let Some(dir) = dir else {
         return Err(ArgError::MissingDir);
@@ -133,12 +146,15 @@ fn parse_args() -> Result<Args, ArgError> {
 }
 
 fn main() {
-    match parse_args() {
+    match parse_args(std::env::args()) {
         Ok(args) => run(args),
         Err(e) => {
             match e {
                 ArgError::ExpectedNumber(a) => eprintln!("Expected number, found '{a}'"),
                 ArgError::UnknownArgument(a) => eprintln!("Unknown argument '{a}'"),
+                ArgError::ExpectedArgumentFoundFlag { flag, found } => {
+                    eprintln!("Expected argument for {flag}, found {found}")
+                }
                 ArgError::UnableToFindOrCreateDir(a) => {
                     eprintln!("Unable to find or create directory '{a}'")
                 }
@@ -146,6 +162,7 @@ fn main() {
                 ArgError::UnexpectedPositionalArg(a) => eprintln!("Unexpected argument '{a}'"),
                 ArgError::MissingNumber => eprintln!("Expected number"),
                 ArgError::MissingPrefix => eprintln!("Missing prefix"),
+                ArgError::MissingArgument => eprintln!("Missing argument"),
             }
             eprintln!();
             eprintln!("{HELP}");
@@ -266,5 +283,183 @@ impl LogManager {
             let index = self.log_indices.pop_front().unwrap();
             let _ = std::fs::remove_file(self.filename(index));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_args_fails_if_no_dir_set() {
+        let result = parse_args(
+            ["rollout", "-p", "foo", "-s", "100", "-k", "5", "-r"]
+                .iter()
+                .map(ToString::to_string),
+        );
+
+        assert_eq!(result, Err(ArgError::MissingDir));
+    }
+
+    #[test]
+    fn parse_args_fails_if_no_prefix_set() {
+        let result = parse_args(
+            ["rollout", "-s", "100", "-k", "5", "-r", "logs"]
+                .iter()
+                .map(ToString::to_string),
+        );
+
+        assert_eq!(result, Err(ArgError::MissingPrefix));
+    }
+
+    #[test]
+    fn parse_args_fails_if_prefix_missing_arg() {
+        let result = parse_args(["rollout", "logs", "-p"].iter().map(ToString::to_string));
+
+        assert_eq!(result, Err(ArgError::MissingArgument));
+    }
+    #[test]
+    fn parse_args_fails_if_prefix_arg_starts_with_hyphen() {
+        let result = parse_args(
+            ["rollout", "-p", "-s", "100", "-k", "5", "-r", "logs"]
+                .iter()
+                .map(ToString::to_string),
+        );
+
+        assert_eq!(
+            result,
+            Err(ArgError::ExpectedArgumentFoundFlag {
+                flag: "--prefix",
+                found: "-s".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn parse_args_fails_if_keep_missing_arg() {
+        let result = parse_args(
+            ["rollout", "-p", "foo", "logs", "-k"]
+                .iter()
+                .map(ToString::to_string),
+        );
+
+        assert_eq!(result, Err(ArgError::MissingNumber));
+    }
+    #[test]
+    fn parse_args_fails_if_size_missing_arg() {
+        let result = parse_args(
+            ["rollout", "-p", "foo", "logs", "-s"]
+                .iter()
+                .map(ToString::to_string),
+        );
+
+        assert_eq!(result, Err(ArgError::MissingNumber));
+    }
+    #[test]
+    fn parse_args_fails_if_keep_arg_is_not_number() {
+        let result = parse_args(["rollout", "-k", "NaN"].iter().map(ToString::to_string));
+
+        assert_eq!(result, Err(ArgError::ExpectedNumber("NaN".to_string())));
+    }
+
+    #[test]
+    fn parse_args_fails_if_size_arg_is_not_number() {
+        let result = parse_args(["rollout", "-s", "NaN"].iter().map(ToString::to_string));
+
+        assert_eq!(result, Err(ArgError::ExpectedNumber("NaN".to_string())));
+    }
+
+    #[test]
+    fn parse_args_fails_if_unknown_argument() {
+        let result = parse_args(["rollout", "--unknown"].iter().map(ToString::to_string));
+
+        assert_eq!(
+            result,
+            Err(ArgError::UnknownArgument("--unknown".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_args_fails_if_too_many_positional_args() {
+        let result = parse_args(
+            ["rollout", "-p", "foo", "logs", "extra"]
+                .iter()
+                .map(ToString::to_string),
+        );
+
+        assert_eq!(
+            result,
+            Err(ArgError::UnexpectedPositionalArg("extra".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_args_succeeds_with_long_form_args() {
+        let result = parse_args(
+            [
+                "rollout",
+                "--prefix",
+                "foo",
+                "--size",
+                "100",
+                "--keep",
+                "6",
+                "--rotate-on-start",
+                "logs",
+            ]
+            .iter()
+            .map(ToString::to_string),
+        );
+
+        assert_eq!(
+            result,
+            Ok(Args {
+                dir: "logs".to_string(),
+                size_bytes: 100 * 1024,
+                to_keep: 6,
+                rotate: true,
+                prefix: "foo".to_string(),
+            }),
+        );
+    }
+
+    #[test]
+    fn parse_args_succeeds_with_short_form_args() {
+        let result = parse_args(
+            ["rollout", "-p", "foo", "-s", "100", "-k", "6", "-r", "logs"]
+                .iter()
+                .map(ToString::to_string),
+        );
+
+        assert_eq!(
+            result,
+            Ok(Args {
+                dir: "logs".to_string(),
+                size_bytes: 100 * 1024,
+                to_keep: 6,
+                rotate: true,
+                prefix: "foo".to_string(),
+            }),
+        );
+    }
+
+    #[test]
+    fn parse_args_default_args_are_correct() {
+        let result = parse_args(
+            ["rollout", "-p", "foo", "logs"]
+                .iter()
+                .map(ToString::to_string),
+        );
+
+        assert_eq!(
+            result,
+            Ok(Args {
+                dir: "logs".to_string(),
+                size_bytes: 10 * 1024 * 1024,
+                to_keep: 5,
+                rotate: false,
+                prefix: "foo".to_string(),
+            }),
+        );
     }
 }
