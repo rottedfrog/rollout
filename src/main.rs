@@ -211,8 +211,9 @@ fn run(args: Args) -> ! {
     let Ok((mut file_size, mut outp)) = open_current() else {
         exit(1)
     };
-    if args.rotate {
+    if args.rotate && file_size > 0 {
         outp = rotate(outp, &mut lm, args.to_keep);
+        file_size = 0;
     }
     let mut buf = [0; 1024];
     let mut inp = stdin().lock();
