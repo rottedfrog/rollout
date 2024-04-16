@@ -471,7 +471,7 @@ mod tests {
             Ok(Args {
                 dir: "logs".to_string(),
                 size_bytes: 10 * 1024 * 1024,
-                to_keep: 5,
+                to_keep: 0,
                 rotate: false,
                 prefix: "foo".to_string(),
             }),
