@@ -273,9 +273,9 @@ impl LogManager {
     }
 
     fn next_index(&mut self) -> u32 {
-        let i = self.log_indices.back().copied().unwrap_or(1);
-        self.log_indices.push_back(i);
-        i
+        let i = self.log_indices.back().copied().unwrap_or(0);
+        self.log_indices.push_back(i + 1);
+        i + 1
     }
 
     fn filename(&self, index: u32) -> String {
