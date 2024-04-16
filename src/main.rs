@@ -239,8 +239,9 @@ fn run(args: Args) -> ! {
 
 fn log_index(de: &DirEntry, prefix: &str) -> Option<u32> {
     let f = de.file_name();
+    let f = f.to_str().unwrap_or_default();
     let p: &Path = f.as_ref();
-    if p.starts_with(prefix) && p.extension().is_some_and(|ext| ext == "log") {
+    if f.starts_with(prefix) && p.extension().is_some_and(|ext| ext == "log") {
         let p = p.to_str()?;
         p[prefix.len()..p.len() - 4].parse().ok()
     } else {
