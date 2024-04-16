@@ -218,6 +218,9 @@ fn run(args: Args) -> ! {
     let mut inp = stdin().lock();
     loop {
         let sz = resolve_io(|| inp.read(&mut buf[..]));
+        if sz == 0 {
+            exit(0);
+        }
         file_size += sz as u64;
         if file_size >= args.size_bytes {
             if let Some(b) = buf.iter().position(|b| *b == b'\n') {
