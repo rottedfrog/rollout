@@ -13,7 +13,7 @@ A rolling logfile appender
 Takes stdin and appends to logfiles in <dir>. Reads Logs are broken at a newline as close as possible to the specified size
 Any errors deemed unrecoverable and it immediately exits with a return value of 1.
 
-Log files are of the format {prefix}.{n}.log where {prefix} is specified on the command line and {n} is a zero padded 3 digit number, starting at 1.
+Log files are of the format {prefix}.{n}.log where {prefix} is specified on the command line and {n} is a monotonically increasing integer, starting at 1 if no existing logs are present.
 
 
 USAGE:
