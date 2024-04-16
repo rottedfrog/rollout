@@ -1,6 +1,7 @@
 use std::{
     collections::VecDeque,
-    fs::{rename, DirEntry, File},
+    ffi::{OsStr, OsString},
+    fs::{rename, File},
     io::{self, stdin, ErrorKind, Read, Write},
     os::unix::fs::MetadataExt,
     path::Path,
@@ -180,7 +181,7 @@ fn rotate(mut current: File, lm: &mut LogManager, to_keep: u32) -> File {
     drop(current);
 
     resolve_io(|| rename("current", lm.next_logfile()));
-    lm.cleanup_old(to_keep as usize);
+    lm.cleanup_old(to_keep as usize, std::fs::remove_file);
     resolve_io(|| {
         File::options()
             .write(true)
@@ -190,6 +191,7 @@ fn rotate(mut current: File, lm: &mut LogManager, to_keep: u32) -> File {
     })
 }
 
+// Resolve retryable io errors or exit with an error
 fn resolve_io<T>(mut f: impl FnMut() -> io::Result<T>) -> T {
     loop {
         match (f)() {
@@ -206,7 +208,12 @@ fn run(args: Args) -> ! {
     let Ok(()) = std::env::set_current_dir(args.dir) else {
         exit(1)
     };
-    let mut lm = LogManager::new(args.prefix).unwrap();
+    let dir_entries = std::fs::read_dir(".")
+        .unwrap()
+        .flatten()
+        .filter(|de| de.file_type().map_or(false, |ft| ft.is_file()))
+        .map(|de| de.file_name());
+    let mut lm = LogManager::new(args.prefix, dir_entries);
 
     let Ok((mut file_size, mut outp)) = open_current() else {
         exit(1)
@@ -220,6 +227,7 @@ fn run(args: Args) -> ! {
     loop {
         let sz = resolve_io(|| inp.read(&mut buf[..]));
         if sz == 0 {
+            // No data means stream is complete, close with a successful exit code.
             exit(0);
         }
         file_size += sz as u64;
@@ -237,8 +245,7 @@ fn run(args: Args) -> ! {
     }
 }
 
-fn log_index(de: &DirEntry, prefix: &str) -> Option<u32> {
-    let f = de.file_name();
+fn log_index(f: &OsStr, prefix: &str) -> Option<u32> {
     let f = f.to_str().unwrap_or_default();
     let p: &Path = f.as_ref();
     if f.starts_with(prefix) && p.extension().is_some_and(|ext| ext == "log") {
@@ -255,17 +262,16 @@ struct LogManager {
 }
 
 impl LogManager {
-    fn new(prefix: String) -> io::Result<Self> {
-        let mut log_indices: Vec<_> = std::fs::read_dir(".")?
-            .flatten()
-            .filter_map(|de| log_index(&de, prefix.as_str()))
+    fn new(prefix: String, initial_dir_entries: impl Iterator<Item = OsString>) -> Self {
+        let mut log_indices: Vec<_> = initial_dir_entries
+            .filter_map(|f| log_index(&f, prefix.as_str()))
             .collect();
         log_indices.sort_unstable();
 
-        Ok(LogManager {
+        LogManager {
             prefix,
             log_indices: log_indices.into(),
-        })
+        }
     }
 
     fn next_logfile(&mut self) -> String {
@@ -283,10 +289,11 @@ impl LogManager {
         format!("{}{}.log", self.prefix, index)
     }
 
-    fn cleanup_old(&mut self, to_keep: usize) {
+    fn cleanup_old(&mut self, to_keep: usize, remover: impl Fn(String) -> io::Result<()>) {
         while self.log_indices.len() > to_keep {
             let index = self.log_indices.pop_front().unwrap();
-            let _ = std::fs::remove_file(self.filename(index));
+            // If cleanup fails, this is not a fatal error, just carry on.
+            let _ = remover(self.filename(index));
         }
     }
 }
